@@ -1,0 +1,239 @@
+Program.Sub.ScreenSU.Start
+Program.Sub.ScreenSU.End
+
+Program.Sub.Preflight.Start
+
+Variable.UDT.uOrder.Define("BIRUNID",Long)
+Variable.UDT.uOrder.Define("PRODUCT_LINE",String,PRODUCT_LINE)
+Variable.UDT.uOrder.Define("PRODUCT_LINE_DESC",String,PRODUCT_LINE_DESC)
+Variable.UDT.uOrder.Define("PRIOR",Float,PRIOR)
+Variable.UDT.uOrder.Define("CURRENT_EXT",Float)
+Variable.UDT.uOrder.Define("HIST",Float)
+Variable.UDT.uOrder.Define("DATE_ORDER",Date,DATE_ORDER)
+Variable.UDT.uOrder.Define("TYPE",String,TYPE)
+Variable.uGlobal.uOrder.Declare("uOrder")
+Variable.Global.iBIRUNID.Declare(Long,0)
+Variable.Global.iLogID.Declare(Long,0)
+Program.Sub.Preflight.End
+
+Program.Sub.Main.Start
+F.Intrinsic.Control.SetErrorHandler("Main_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+'Quote 3643
+'ERM
+F.Global.BI.GetRunID(V.Global.iBIRUNID)
+F.Global.BI.StartLogging(V.Global.iBIRUNID,-1,-1,"Daily Orders",V.Global.iLogID)
+V.uGlobal.uOrder.Redim(-1,-1)
+
+F.Intrinsic.UI.InvokeWaitDialog("Loading...","PleaseWait...")
+F.ODBC.Connection!con.OpenConnection(V.Ambient.PDSN,V.Ambient.PUser,V.Ambient.PPass)
+'prior is order date prior to todays date
+F.Intrinsic.Control.CallSub(Prior)
+F.Intrinsic.UI.ChangeWaitStatus("Loading New Orders...")
+'current is order date on todays date
+F.Intrinsic.Control.CallSub(Current)
+F.Intrinsic.UI.ChangeWaitStatus("Loading Orders Invoiced...")
+'hist is invoiced on todays date
+F.Intrinsic.Control.CallSub(Hist)
+F.Intrinsic.UI.ChangeWaitStatus("Loading Report...")
+F.Intrinsic.Control.CallSub(Loadtable)
+
+F.Intrinsic.Control.CallSub(Unload)
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("Main_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: gcg_daily_orders_CERT.gas",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.CallSub(Unload)
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.Main.End
+
+Program.Sub.Prior.Start
+F.Intrinsic.Control.SetErrorHandler("Prior_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+V.Local.sSQL.Declare(String)
+V.Local.sDate.Declare(String)
+V.Local.sPLdesc.Declare(String)
+
+F.Intrinsic.UI.ChangeWaitStatus("Loading Previous Orders...")
+
+F.Intrinsic.String.Format(V.Ambient.Date,"YYYY-MM-DD",V.Local.sDate)
+F.Intrinsic.String.Build("Select H.Order_No,H.Date_Order, L.Product_Line, L.Extension AS PRIOR, P.Product_Line_Desc, 'P' AS TYPE From V_ORDER_HEADER H,V_ORDER_LINES L, V_PRODUCT_LINE P where H.DATE_ORDER < '{0}' AND H.Order_No = L.Order_No AND L.PRODUCT_LINE = P.PRODUCT_LINE Order By H.ORDER_NO",V.Local.sDate,V.Local.sSQL)
+F.ODBC.Connection!con.OpenRecordsetRO("rst",V.Local.sSQL)
+
+F.Intrinsic.Control.If(V.ODBC.con!rst.EOF,=,False)
+	F.Intrinsic.Variable.LoadUDTFromRecordset("con","rst","V.uGlobal.uOrder",0)
+	F.Intrinsic.Variable.SetUDTFieldReference(V.uGlobal.uOrder!PRIOR,"")
+F.Intrinsic.Control.EndIf
+F.ODBC.con!rst.Close
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("Prior_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: gcg_daily_orders_CERT.gas",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.CallSub(Unload)
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.Prior.End
+
+Program.Sub.Current.Start
+F.Intrinsic.Control.SetErrorHandler("Current_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+V.Local.sSQL.Declare(String)
+V.Local.sDate.Declare(String)
+V.Local.i.Declare(Long)
+
+F.Intrinsic.String.Format(V.Ambient.Date,"YYYY-MM-DD",V.Local.sDate)
+F.Intrinsic.String.Build("Select H.Order_No,H.Date_Order, L.Product_Line, L.Extension AS CURRENT_EXT, P.Product_Line_Desc, 'C' AS TYPE From V_ORDER_HEADER H,V_ORDER_LINES L, V_PRODUCT_LINE P where H.DATE_ORDER = '{0}' AND H.Order_No = L.Order_No AND L.PRODUCT_LINE = P.PRODUCT_LINE Order By H.ORDER_NO",V.Local.sDate,V.Local.sSQL)
+F.ODBC.Connection!con.OpenRecordsetRO("rst",V.Local.sSQL)
+
+F.Intrinsic.Control.If(V.ODBC.con!rst.EOF,=,False)
+	F.Intrinsic.Variable.SetUDTFieldReference(V.uGlobal.uOrder!CURRENT_EXT,"CURRENT_EXT")
+	F.Intrinsic.Variable.LoadUDTFromRecordset("con","rst","V.uGlobal.uOrder",1)
+	F.Intrinsic.Variable.SetUDTFieldReference(V.uGlobal.uOrder!CURRENT_EXT,"")
+F.Intrinsic.Control.EndIf
+
+F.ODBC.con!rst.Close
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("Current_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: gcg_daily_orders_CERT.gas",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.CallSub(Unload)
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.Current.End
+
+Program.Sub.Hist.Start
+F.Intrinsic.Control.SetErrorHandler("Hist_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+V.Local.sSQL.Declare(String)
+V.Local.sDate.Declare(String)
+
+F.Intrinsic.String.Format(V.Ambient.Date,"YYYY-MM-DD",V.Local.sDate)
+F.Intrinsic.String.Build("Select H.Order_No,H.Date_Order, L.Product_Line, L.Extension AS HIST, P.Product_Line_Desc, 'H' AS TYPE From V_ORDER_HIST_HEAD H,V_ORDER_HIST_LINE L, V_PRODUCT_LINE P where H.DATE_INVOICE = '{0}' AND H.Order_No = L.Order_No AND L.PRODUCT_LINE = P.PRODUCT_LINE Order By H.ORDER_NO",V.Local.sDate,V.Local.sSQL)
+F.ODBC.Connection!con.OpenRecordsetRO("rst",V.Local.sSQL)
+
+F.Intrinsic.Control.If(V.ODBC.con!rst.EOF,=,False)
+	F.Intrinsic.Variable.SetUDTFieldReference(V.uGlobal.uOrder!HIST,"HIST")
+	F.Intrinsic.Variable.LoadUDTFromRecordset("con","rst","V.uGlobal.uOrder",1)
+F.Intrinsic.Control.EndIf
+
+F.ODBC.con!rst.Close
+
+F.Intrinsic.Control.ExitSub
+
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("Hist_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: gcg_daily_orders_CERT.gas",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.CallSub(Unload)
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.Hist.End
+
+Program.Sub.Unload.Start
+F.Intrinsic.Control.SetErrorHandler("Unload_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+
+F.ODBC.Connection!con.Close
+F.Intrinsic.Control.End
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("Unload_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: gcg_daily_orders_CERT.gas",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.Unload.End
+
+Program.Sub.CallBI.Start
+F.Intrinsic.Control.SetErrorHandler("Report_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+V.Local.iRet.Declare(Long)
+
+F.Global.BI.StopLogging(V.Global.iLogID)
+F.Intrinsic.UI.CloseWaitDialog
+F.Global.BI.RunReportPreProcessor(V.Global.iBIRUNID,V.Global.iLogID,"","","",-1,True,"",-1,"",-1,"","",V.Local.iRet)
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("Report_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: gcg_daily_orders_CERT.gas",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.CallBI.End
+
+Program.Sub.LoadTable.Start
+F.Intrinsic.Control.SetErrorHandler("LoadTable_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+
+F.Intrinsic.Control.If(V.uGlobal.uOrder.UBound,<>,-1)
+	F.Intrinsic.Variable.SetUDTFieldReference(V.uGlobal.uOrder!BIRUNID,"BIRUNID")
+	F.Intrinsic.Variable.UDTSetMemberValue(V.uGlobal.uOrder!BIRUNID,V.Global.iBIRUNID)
+	F.Intrinsic.Variable.SetUDTFieldReference(V.uGlobal.uOrder!PRIOR,"PRIOR")
+	F.Intrinsic.Variable.SetUDTFieldReference(V.uGlobal.uOrder!CURRENT_EXT,"CURRENT_EXT")
+	F.Intrinsic.Variable.SetUDTFieldReference(V.uGlobal.uOrder!HIST,"HIST")
+F.Intrinsic.Control.EndIf
+
+F.ODBC.Connection!con.OpenLocalRecordsetRW("rst","SELECT * FROM GCG_3537_DAILY_ORD")
+F.Intrinsic.Variable.SaveUDTToRecordSet("con","rst","V.uGlobal.uOrder")
+F.ODBC.con!rst.Close
+F.Intrinsic.Control.CallSub(Callbi)
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("LoadTable_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: gcg_daily_orders_CERT.gas",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.CallSub(Unload)
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.LoadTable.End
+
+Program.Sub.Comments.Start
+${$0$}$GCG_DAILY_ORDERS$}$ERIC$}$6/26/2012
+${$2$}$$}$$}$1$}$1$}$gcg_daily_orders_cert.rpt$}$10/26/2015 8:23:51 AM$}$Report file associated with project.
+${$2$}$$}$$}$0$}$4$}$Custom Menu Item$}$10/23/2015 4:44:32 PM$}$System Support -> Administration -> Daily Orders
+${$3$}$0$}$$}$-1$}$-1$}$$}$1/1/1900$}$Quote 3643 Report to show daily order numbers.
+${$4$}$0$}$$}$0$}$-1$}$BCC$}$10/26/2015 8:26:17 AM$}$GS Certified. Updated code. Sped up code. Added error handling
+
+Program.Sub.Comments.End
+
